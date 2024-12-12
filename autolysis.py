@@ -7,8 +7,7 @@
 #   "requests",
 #   "scikit-learn",
 #   "chardet",
-#   "plotly",
-#   "numpy"
+#   "plotly"
 # ]
 # ///
 
@@ -23,9 +22,6 @@ import json
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score
-from sklearn.decomposition import PCA
-from sklearn.ensemble import RandomForestClassifier
-import numpy as np
 import logging
 
 # Configure logging
@@ -152,49 +148,17 @@ def analyze_dataset(file_path):
     
     analysis["outliers"] = outliers
     
-    # Feature Importance using Random Forest (if target variable exists)
+    # Feature Importance (e.g., using correlation)
     feature_importance = {}
-    target_col = None
-    # Attempt to identify a target column (binary or categorical)
-    for col in categorical_cols:
-        if df[col].nunique() <= 10:  # Simple heuristic
-            target_col = col
-            break
-    if target_col and len(numeric_cols) >= 1:
-        try:
-            X = df.select_dtypes(include=['number']).drop(columns=[target_col], errors='ignore')
-            y = df[target_col]
-            model = RandomForestClassifier(n_estimators=100, random_state=42)
-            model.fit(X, y)
-            importances = model.feature_importances_
-            feature_importance = dict(zip(X.columns, importances))
-            analysis["feature_importance"] = feature_importance
-            logging.info(f"Computed feature importance using Random Forest for {file_path}")
-        except Exception as e:
-            logging.warning(f"Unable to compute feature importance for {file_path}. {e}")
-            analysis["feature_importance"] = {}
-    else:
-        analysis["feature_importance"] = {}
-    
-    # Principal Component Analysis (PCA)
-    pca = None
-    if len(numeric_cols) >= 2:
-        try:
-            scaler = StandardScaler()
-            scaled_data = scaler.fit_transform(df[numeric_cols])
-            pca = PCA(n_components=2)
-            principal_components = pca.fit_transform(scaled_data)
-            df['PC1'] = principal_components[:, 0]
-            df['PC2'] = principal_components[:, 1]
-            analysis["pca"] = {
-                "explained_variance_ratio": pca.explained_variance_ratio_.tolist()
-            }
-            logging.info(f"Performed PCA on {file_path}")
-        except Exception as e:
-            logging.warning(f"Unable to perform PCA for {file_path}. {e}")
-            analysis["pca"] = {}
-    else:
-        analysis["pca"] = {}
+    if len(numeric_cols) > 1:
+        corr_matrix = df[numeric_cols].corr()
+        for col in numeric_cols:
+            correlations = corr_matrix[col].drop(labels=[col]).abs().sort_values(ascending=False)
+            if not correlations.empty:
+                feature_importance[col] = correlations.index[0]
+            else:
+                feature_importance[col] = None
+    analysis["feature_importance"] = feature_importance
     
     # Clustering
     if len(numeric_cols) >= 2:
@@ -219,8 +183,8 @@ def analyze_dataset(file_path):
 
 def generate_visualizations(df, output_dir):
     """
-    Generates visualizations based on the DataFrame and saves them as PNG/HTML files.
-    Returns a list of generated filenames.
+    Generates visualizations based on the DataFrame and saves them as PNG files.
+    Returns a list of generated PNG filenames.
     """
     png_files = []
     
@@ -311,42 +275,18 @@ def generate_visualizations(df, output_dir):
     
     # 6. Interactive Plotly Visualization (Optional)
     if len(numeric_columns) >= 2:
-        try:
-            fig = px.scatter(
-                df,
-                x=numeric_columns[0],
-                y=numeric_columns[1],
-                color='Cluster' if 'Cluster' in df.columns else None,
-                title=f"Interactive Scatter Plot of {numeric_columns[0]} vs {numeric_columns[1]}"
-            )
-            interactive_plot_path = os.path.join(output_dir, f"{numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html")
-            fig.write_html(interactive_plot_path)
-            png_files.append(f"{numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html")
-            logging.info(f"Saved {numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html in {output_dir}")
-            print(f"Saved {numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html in {output_dir}")
-        except Exception as e:
-            logging.warning(f"Unable to create interactive Plotly visualization for {file_path}. {e}")
-    
-    # 7. PCA Plot (if applicable)
-    if 'PC1' in df.columns and 'PC2' in df.columns:
-        try:
-            plt.figure(figsize=(10, 6))
-            sns.scatterplot(
-                data=df,
-                x='PC1',
-                y='PC2',
-                hue='Cluster' if 'Cluster' in df.columns else None,
-                palette='Set2'
-            )
-            plt.title("PCA Scatter Plot")
-            pca_path = os.path.join(output_dir, "pca_scatter_plot.png")
-            plt.savefig(pca_path)
-            plt.close()
-            png_files.append("pca_scatter_plot.png")
-            logging.info(f"Saved pca_scatter_plot.png in {output_dir}")
-            print(f"Saved pca_scatter_plot.png in {output_dir}")
-        except Exception as e:
-            logging.warning(f"Unable to create PCA scatter plot for {file_path}. {e}")
+        fig = px.scatter(
+            df,
+            x=numeric_columns[0],
+            y=numeric_columns[1],
+            color='Cluster' if 'Cluster' in df.columns else None,
+            title=f"Interactive Scatter Plot of {numeric_columns[0]} vs {numeric_columns[1]}"
+        )
+        interactive_plot_path = os.path.join(output_dir, f"{numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html")
+        fig.write_html(interactive_plot_path)
+        png_files.append(f"{numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html")
+        logging.info(f"Saved {numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html in {output_dir}")
+        print(f"Saved {numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html in {output_dir}")
     
     return png_files
 
@@ -362,9 +302,8 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
         f"**Missing Values:** {analysis['missing_values']}\n"
         f"**Summary Statistics:** {list(analysis['summary_stats'].keys())}\n"
         f"**Outliers Detected:** {analysis['outliers']}\n"
-        f"**Feature Importance:** {analysis.get('feature_importance', {})}\n"
+        f"**Feature Importance:** {analysis['feature_importance']}\n"
         f"**Clustering Results:** {analysis['clusters']}\n"
-        f"**PCA Explained Variance:** {analysis.get('pca', {}).get('explained_variance_ratio', [])}\n"
     )
     
     # Enhanced Narrative Generation Prompt
@@ -374,12 +313,10 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
         "2. **Data Cleaning and Preprocessing:** Outline the steps taken to handle missing values, outliers, and any data transformations applied.\n"
         "3. **Exploratory Data Analysis (EDA):** Present key insights, trends, and patterns discovered during the analysis.\n"
         "4. **Visualizations:** For each generated chart, provide an in-depth explanation of what it represents and the insights it offers.\n"
-        "5. **Feature Importance:** Discuss the importance of different features based on the analysis.\n"
-        "6. **Clustering and Segmentation:** Discuss the results of any clustering algorithms used, including the characteristics of each cluster.\n"
-        "7. **Principal Component Analysis (PCA):** Explain the PCA results and how they contribute to understanding the dataset.\n"
-        "8. **Implications and Recommendations:** Based on the findings, suggest actionable recommendations or potential implications for stakeholders.\n"
-        "9. **Future Work:** Propose three additional analyses or visualizations that could further enhance the understanding of the dataset.\n"
-        "10. **Vision Agentic Enhancements:** Recommend ways to incorporate advanced visual (image-based) analysis techniques or interactive visualizations to provide deeper insights.\n\n"
+        "5. **Clustering and Segmentation:** Discuss the results of any clustering algorithms used, including the characteristics of each cluster.\n"
+        "6. **Implications and Recommendations:** Based on the findings, suggest actionable recommendations or potential implications for stakeholders.\n"
+        "7. **Future Work:** Propose three additional analyses or visualizations that could further enhance the understanding of the dataset.\n"
+        "8. **Vision Agentic Enhancements:** Recommend ways to incorporate advanced visual (image-based) analysis techniques or interactive visualizations to provide deeper insights.\n\n"
         f"**Comprehensive Analysis:**\n{analysis_summary}"
     )
     
@@ -390,7 +327,7 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
             {"role": "system", "content": "You are a helpful data scientist narrating the story of a dataset."},
             {"role": "user", "content": prompt}
         ],
-        "max_tokens": 2500,
+        "max_tokens": 2000,
         "temperature": 0.7
     }
     
