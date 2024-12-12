@@ -19,6 +19,7 @@ import requests
 import json
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import silhouette_score
 import logging
 
 # Configure logging
@@ -56,6 +57,32 @@ def detect_encoding(file_path):
     with open(file_path, 'rb') as f:
         result = chardet.detect(f.read())
     return result['encoding']
+
+def determine_cluster_count(df):
+    """
+    Determines the optimal number of clusters using the silhouette score.
+    """
+    numeric_data = df.select_dtypes(include=['number'])
+    if numeric_data.empty:
+        return 1  # Default to 1 cluster if no numeric data
+    
+    max_clusters = min(10, len(numeric_data) // 10)  # Prevent too many clusters
+    if max_clusters < 2:
+        return 1
+    
+    best_score = -1
+    best_k = 2
+    for k in range(2, max_clusters + 1):
+        kmeans = KMeans(n_clusters=k, random_state=42)
+        clusters = kmeans.fit_predict(numeric_data)
+        try:
+            score = silhouette_score(numeric_data, clusters)
+            if score > best_score:
+                best_score = score
+                best_k = k
+        except:
+            continue
+    return best_k
 
 def analyze_dataset(file_path):
     """
@@ -121,14 +148,19 @@ def analyze_dataset(file_path):
     
     # Clustering
     if len(numeric_cols) >= 2:
-        scaler = StandardScaler()
-        scaled_data = scaler.fit_transform(df[numeric_cols])
-        kmeans = KMeans(n_clusters=3, random_state=42)
-        clusters = kmeans.fit_predict(scaled_data)
-        df['Cluster'] = clusters
-        cluster_counts = df['Cluster'].value_counts().to_dict()
-        analysis["clusters"] = cluster_counts
-        logging.info(f"Performed K-Means clustering on {file_path}")
+        optimal_k = determine_cluster_count(df)
+        if optimal_k > 1:
+            scaler = StandardScaler()
+            scaled_data = scaler.fit_transform(df[numeric_cols])
+            kmeans = KMeans(n_clusters=optimal_k, random_state=42)
+            clusters = kmeans.fit_predict(scaled_data)
+            df['Cluster'] = clusters
+            cluster_counts = df['Cluster'].value_counts().to_dict()
+            analysis["clusters"] = cluster_counts
+            logging.info(f"Performed K-Means clustering with k={optimal_k} on {file_path}")
+        else:
+            analysis["clusters"] = "Clustering not performed due to insufficient data or low optimal k."
+            logging.warning(f"Clustering not performed for {file_path}")
     else:
         analysis["clusters"] = "Not enough numeric columns for clustering."
         logging.warning(f"Not enough numeric columns for clustering in {file_path}")
@@ -212,19 +244,19 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
         f"**Clustering Results:** {analysis['clusters']}\n"
     )
     
-    # Define the prompt for the LLM
+    # Enhanced Narrative Generation Prompt
     prompt = (
-    "You are an advanced data scientist with expertise in data analysis and visualization. Based on the comprehensive analysis provided below, generate a detailed narrative in Markdown format that includes:\n"
-    "1. **Dataset Overview:** A thorough description of the dataset, its source, and its structure.\n"
-    "2. **Key Insights:** Highlight the most significant findings and trends observed in the data.\n"
-    "3. **Visualization Interpretations:** Provide in-depth explanations of each generated chart, discussing what they reveal about the data.\n"
-    "4. **Implications and Recommendations:** Discuss the potential implications of the findings and offer actionable recommendations.\n"
-    "5. **Dynamic Analysis Suggestions:** Propose three additional analyses or visualizations that could further enhance the understanding of the dataset.\n"
-    "6. **Vision Agentic Enhancements:** Suggest ways to integrate visual analysis or image-based insights to complement the current findings.\n\n"
-    f"**Comprehensive Analysis:**\n{analysis_summary}"
-)
-
-
+        "You are an expert data scientist with extensive experience in data analysis and visualization. Based on the comprehensive analysis provided below, generate a detailed narrative in Markdown format that includes the following sections:\n"
+        "1. **Dataset Overview:** A thorough description of the dataset, including its source, purpose, and structure.\n"
+        "2. **Data Cleaning and Preprocessing:** Outline the steps taken to handle missing values, outliers, and any data transformations applied.\n"
+        "3. **Exploratory Data Analysis (EDA):** Present key insights, trends, and patterns discovered during the analysis.\n"
+        "4. **Visualizations:** For each generated chart, provide an in-depth explanation of what it represents and the insights it offers.\n"
+        "5. **Clustering and Segmentation:** Discuss the results of any clustering algorithms used, including the characteristics of each cluster.\n"
+        "6. **Implications and Recommendations:** Based on the findings, suggest actionable recommendations or potential implications for stakeholders.\n"
+        "7. **Future Work:** Propose three additional analyses or visualizations that could further enhance the understanding of the dataset.\n"
+        "8. **Vision Agentic Enhancements:** Recommend ways to incorporate advanced visual (image-based) analysis techniques or interactive visualizations to provide deeper insights.\n\n"
+        f"**Comprehensive Analysis:**\n{analysis_summary}"
+    )
     
     # Prepare the payload for the AI Proxy
     payload = {
@@ -264,12 +296,11 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
         for img in png_files:
             story += f"![{img}]({img})\n"
     
-    # Suggest Additional Analyses
+    # Refined Additional Suggestions Prompt
     suggestion_prompt = (
-    "Based on the narrative and analysis provided below, suggest three innovative analyses or visualizations that could offer deeper insights or uncover hidden patterns in the dataset. Additionally, recommend how visual (image-based) analysis techniques could be integrated to enhance the overall understanding.\n\n"
-    f"**Narrative and Analysis:**\n{story}"
-)
-
+        "Based on the following narrative and analysis, suggest three innovative analyses or visualizations that could provide deeper insights or uncover hidden patterns in the dataset. Additionally, recommend how advanced visual (image-based) analysis techniques or interactive visualizations could be integrated to enhance the overall understanding.\n\n"
+        f"**Narrative and Analysis:**\n{story}"
+    )
     
     suggestion_payload = {
         "model": "gpt-4o-mini",
@@ -298,6 +329,38 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
     
     story += f"\n\n## Additional Suggestions\n{suggestions}"
     
+    # Vision Agentic Enhancements Prompt
+    vision_prompt = (
+        "In addition to the existing analyses and visualizations, suggest three interactive visualization techniques or image-based analysis methods that could be integrated into the report to enhance data exploration and stakeholder engagement. Provide brief descriptions of how each technique can be applied to the current dataset.\n"
+    )
+    
+    vision_payload = {
+        "model": "gpt-4o-mini",
+        "messages": [
+            {"role": "system", "content": "You are a helpful data scientist."},
+            {"role": "user", "content": vision_prompt}
+        ],
+        "max_tokens": 500,
+        "temperature": 0.7
+    }
+    
+    try:
+        vision_response = requests.post(api_proxy_url, headers=headers, json=vision_payload)
+        if vision_response.status_code == 200:
+            vision_result = vision_response.json()
+            vision_suggestions = vision_result['choices'][0]['message']['content']
+            logging.info("Successfully received vision agentic enhancements suggestions.")
+            print("Successfully received vision agentic enhancements suggestions.")
+        else:
+            logging.error(f"Error: {vision_response.status_code}, {vision_response.text}")
+            vision_suggestions = f"Error receiving suggestions: {vision_response.status_code}, {vision_response.text}"
+    except Exception as e:
+        logging.error(f"Error receiving vision suggestions: {e}")
+        print(f"Error receiving vision suggestions: {e}")
+        vision_suggestions = f"Error receiving vision suggestions: {e}"
+    
+    story += f"\n\n## Vision Agentic Enhancements\n{vision_suggestions}"
+    
     return story
 
 def analyze_and_generate_output(file_path, api_proxy_token, api_proxy_url):
@@ -317,10 +380,14 @@ def analyze_and_generate_output(file_path, api_proxy_token, api_proxy_url):
     
     # Write story to README.md
     readme_path = os.path.join(output_dir, "README.md")
-    with open(readme_path, "w", encoding='utf-8') as f:
-        f.write(story)
-    logging.info(f"Saved README.md in {output_dir}")
-    print(f"Saved README.md in {output_dir}")
+    try:
+        with open(readme_path, "w", encoding='utf-8') as f:
+            f.write(story)
+        logging.info(f"Saved README.md in {output_dir}")
+        print(f"Saved README.md in {output_dir}")
+    except Exception as e:
+        logging.error(f"Error writing README.md in {output_dir}: {e}")
+        print(f"Error writing README.md in {output_dir}: {e}")
     
     return output_dir
 
