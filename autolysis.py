@@ -8,8 +8,7 @@
 #   "scikit-learn",
 #   "chardet",
 #   "plotly",
-#   "numpy",
-#   "statsmodels"
+#   "numpy"
 # ]
 # ///
 
@@ -28,8 +27,6 @@ from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
 import numpy as np
 import logging
-import statsmodels.api as sm
-from statsmodels.formula.api import ols
 
 # Configure logging
 logging.basicConfig(
@@ -167,16 +164,12 @@ def analyze_dataset(file_path):
         try:
             X = df.select_dtypes(include=['number']).drop(columns=[target_col], errors='ignore')
             y = df[target_col]
-            if y.nunique() > 1:
-                model = RandomForestClassifier(n_estimators=100, random_state=42)
-                model.fit(X, y)
-                importances = model.feature_importances_
-                feature_importance = dict(zip(X.columns, importances))
-                analysis["feature_importance"] = feature_importance
-                logging.info(f"Computed feature importance using Random Forest for {file_path}")
-            else:
-                analysis["feature_importance"] = {}
-                logging.warning(f"Target column '{target_col}' has only one unique value. Skipping feature importance.")
+            model = RandomForestClassifier(n_estimators=100, random_state=42)
+            model.fit(X, y)
+            importances = model.feature_importances_
+            feature_importance = dict(zip(X.columns, importances))
+            analysis["feature_importance"] = feature_importance
+            logging.info(f"Computed feature importance using Random Forest for {file_path}")
         except Exception as e:
             logging.warning(f"Unable to compute feature importance for {file_path}. {e}")
             analysis["feature_importance"] = {}
@@ -221,22 +214,6 @@ def analyze_dataset(file_path):
     else:
         analysis["clusters"] = "Not enough numeric columns for clustering."
         logging.warning(f"Not enough numeric columns for clustering in {file_path}")
-    
-    # Statistical Analysis: ANOVA (if applicable)
-    anova_results = {}
-    if target_col and 'Cluster' in df.columns:
-        try:
-            formula = f'{numeric_cols[0]} ~ C(Cluster)'
-            model = ols(formula, data=df).fit()
-            anova_table = sm.stats.anova_lm(model, typ=2)
-            anova_results = anova_table.to_dict()
-            analysis["anova"] = anova_results
-            logging.info(f"Performed ANOVA for {file_path}")
-        except Exception as e:
-            logging.warning(f"Unable to perform ANOVA for {file_path}. {e}")
-            analysis["anova"] = {}
-    else:
-        analysis["anova"] = {}
     
     return df, analysis
 
@@ -350,7 +327,7 @@ def generate_visualizations(df, output_dir):
         except Exception as e:
             logging.warning(f"Unable to create interactive Plotly visualization for {file_path}. {e}")
     
-    # 7. PCA Scatter Plot
+    # 7. PCA Plot (if applicable)
     if 'PC1' in df.columns and 'PC2' in df.columns:
         try:
             plt.figure(figsize=(10, 6))
@@ -388,7 +365,6 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
         f"**Feature Importance:** {analysis.get('feature_importance', {})}\n"
         f"**Clustering Results:** {analysis['clusters']}\n"
         f"**PCA Explained Variance:** {analysis.get('pca', {}).get('explained_variance_ratio', [])}\n"
-        f"**ANOVA Results:** {analysis.get('anova', {})}\n"
     )
     
     # Enhanced Narrative Generation Prompt
@@ -401,10 +377,9 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
         "5. **Feature Importance:** Discuss the importance of different features based on the analysis.\n"
         "6. **Clustering and Segmentation:** Discuss the results of any clustering algorithms used, including the characteristics of each cluster.\n"
         "7. **Principal Component Analysis (PCA):** Explain the PCA results and how they contribute to understanding the dataset.\n"
-        "8. **Statistical Analysis:** Present and interpret the results of any statistical tests conducted.\n"
-        "9. **Implications and Recommendations:** Based on the findings, suggest actionable recommendations or potential implications for stakeholders.\n"
-        "10. **Future Work:** Propose three additional analyses or visualizations that could further enhance the understanding of the dataset.\n"
-        "11. **Vision Agentic Enhancements:** Recommend ways to incorporate advanced visual (image-based) analysis techniques or interactive visualizations to provide deeper insights.\n\n"
+        "8. **Implications and Recommendations:** Based on the findings, suggest actionable recommendations or potential implications for stakeholders.\n"
+        "9. **Future Work:** Propose three additional analyses or visualizations that could further enhance the understanding of the dataset.\n"
+        "10. **Vision Agentic Enhancements:** Recommend ways to incorporate advanced visual (image-based) analysis techniques or interactive visualizations to provide deeper insights.\n\n"
         f"**Comprehensive Analysis:**\n{analysis_summary}"
     )
     
@@ -415,7 +390,7 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
             {"role": "system", "content": "You are a helpful data scientist narrating the story of a dataset."},
             {"role": "user", "content": prompt}
         ],
-        "max_tokens": 3000,
+        "max_tokens": 2500,
         "temperature": 0.7
     }
     
@@ -461,7 +436,7 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
             {"role": "system", "content": "You are a helpful data scientist."},
             {"role": "user", "content": suggestion_prompt}
         ],
-        "max_tokens": 1000,
+        "max_tokens": 800,
         "temperature": 0.7
     }
     
@@ -493,7 +468,7 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
             {"role": "system", "content": "You are a helpful data scientist."},
             {"role": "user", "content": vision_prompt}
         ],
-        "max_tokens": 1000,
+        "max_tokens": 800,
         "temperature": 0.7
     }
     
