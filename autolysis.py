@@ -491,6 +491,66 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
     
     return story
 
+
+def generate_interactive_visualizations(df, output_dir):
+    """
+    Generates interactive visualizations using Plotly and saves them as HTML files.
+    Returns a list of generated HTML filenames.
+    """
+    interactive_files = []
+
+    numeric_columns = df.select_dtypes(include='number').columns
+    categorical_columns = df.select_dtypes(include=['object', 'category']).columns
+
+    if len(numeric_columns) >= 2:
+        fig = px.scatter(
+            df,
+            x=numeric_columns[0],
+            y=numeric_columns[1],
+            color='Cluster' if 'Cluster' in df.columns else None,
+            title=f"Interactive Scatter Plot of {numeric_columns[0]} vs {numeric_columns[1]}",
+            hover_data=numeric_columns.tolist()
+        )
+        interactive_plot_path = os.path.join(output_dir, f"{numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html")
+        fig.write_html(interactive_plot_path)
+        interactive_files.append(f"{numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html")
+        logging.info(f"Saved {numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html in {output_dir}")
+        print(f"Saved {numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html in {output_dir}")
+
+    # Additional interactive visualizations can be added here
+
+    return interactive_files
+
+
+
+
+def narrate_story_vision_agentic(analysis, png_files, interactive_files, api_proxy_token, api_proxy_url):
+    """
+    Generates a narrative including vision agentic enhancements.
+    """
+    # Existing narrative generation steps...
+
+    # After generating the basic story
+    story = narrate_story_dynamic(analysis, png_files, api_proxy_token, api_proxy_url)
+
+    # Analyze visualizations using vision models
+    vision_insights = analyze_visualizations(png_files, api_proxy_token, api_proxy_url)
+
+    # Append vision insights to the narrative
+    if vision_insights:
+        story += "\n\n## Vision Insights\n"
+        for img, insights in vision_insights.items():
+            story += f"### {img}\n{insights}\n"
+
+    # Include interactive visualizations in the narrative
+    if interactive_files:
+        story += "\n\n## Interactive Visualizations\n"
+        for html in interactive_files:
+            story += f"[{html}]({html})\n"
+
+    return story
+
+
 def analyze_and_generate_output(file_path, api_proxy_token, api_proxy_url):
     """
     Processes a single CSV file: analyzes data, generates visualizations, narrates the story.
@@ -501,11 +561,12 @@ def analyze_and_generate_output(file_path, api_proxy_token, api_proxy_url):
     os.makedirs(output_dir, exist_ok=True)
     logging.info(f"Created directory: {output_dir}")
     print(f"Created directory: {output_dir}")
-    
+
     df, analysis = analyze_dataset(file_path)
     png_files = generate_visualizations(df, output_dir)
-    story = narrate_story(analysis, png_files, api_proxy_token, api_proxy_url)
-    
+    interactive_files = generate_interactive_visualizations(df, output_dir)
+    story = narrate_story_vision_agentic(analysis, png_files, interactive_files, api_proxy_token, api_proxy_url)
+
     # Write story to README.md
     readme_path = os.path.join(output_dir, "README.md")
     try:
@@ -516,8 +577,9 @@ def analyze_and_generate_output(file_path, api_proxy_token, api_proxy_url):
     except Exception as e:
         logging.error(f"Error writing README.md in {output_dir}: {e}")
         print(f"Error writing README.md in {output_dir}: {e}")
-    
+
     return output_dir
+
 
 def main():
     """
