@@ -6,8 +6,7 @@
 #   "matplotlib",
 #   "requests",
 #   "scikit-learn",
-#   "chardet",
-#   "plotly"
+#   "chardet"
 # ]
 # ///
 
@@ -16,7 +15,6 @@ import sys
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-import plotly.express as px
 import requests
 import json
 from sklearn.cluster import KMeans
@@ -148,18 +146,6 @@ def analyze_dataset(file_path):
     
     analysis["outliers"] = outliers
     
-    # Feature Importance (e.g., using correlation)
-    feature_importance = {}
-    if len(numeric_cols) > 1:
-        corr_matrix = df[numeric_cols].corr()
-        for col in numeric_cols:
-            correlations = corr_matrix[col].drop(labels=[col]).abs().sort_values(ascending=False)
-            if not correlations.empty:
-                feature_importance[col] = correlations.index[0]
-            else:
-                feature_importance[col] = None
-    analysis["feature_importance"] = feature_importance
-    
     # Clustering
     if len(numeric_cols) >= 2:
         optimal_k = determine_cluster_count(df)
@@ -241,53 +227,6 @@ def generate_visualizations(df, output_dir):
         logging.info(f"Saved {first_categorical}_count.png in {output_dir}")
         print(f"Saved {first_categorical}_count.png in {output_dir}")
     
-    # 4. Box Plot for Outlier Detection
-    if len(numeric_columns) > 0:
-        first_numeric = numeric_columns[0]
-        plt.figure(figsize=(10, 6))
-        sns.boxplot(x=df[first_numeric], color='lightgreen')
-        plt.title(f"Box Plot of {first_numeric}")
-        plt.xlabel(first_numeric)
-        box_path = os.path.join(output_dir, f"{first_numeric}_boxplot.png")
-        plt.savefig(box_path)
-        plt.close()
-        png_files.append(f"{first_numeric}_boxplot.png")
-        logging.info(f"Saved {first_numeric}_boxplot.png in {output_dir}")
-        print(f"Saved {first_numeric}_boxplot.png in {output_dir}")
-    
-    # 5. Scatter Plot for Clustering (if applicable)
-    if 'Cluster' in df.columns and len(numeric_columns) >= 2:
-        plt.figure(figsize=(10, 6))
-        sns.scatterplot(
-            data=df,
-            x=numeric_columns[0],
-            y=numeric_columns[1],
-            hue='Cluster',
-            palette='Set1'
-        )
-        plt.title(f"Scatter Plot of {numeric_columns[0]} vs {numeric_columns[1]} with Clusters")
-        scatter_path = os.path.join(output_dir, f"{numeric_columns[0]}_vs_{numeric_columns[1]}_clusters.png")
-        plt.savefig(scatter_path)
-        plt.close()
-        png_files.append(f"{numeric_columns[0]}_vs_{numeric_columns[1]}_clusters.png")
-        logging.info(f"Saved {numeric_columns[0]}_vs_{numeric_columns[1]}_clusters.png in {output_dir}")
-        print(f"Saved {numeric_columns[0]}_vs_{numeric_columns[1]}_clusters.png in {output_dir}")
-    
-    # 6. Interactive Plotly Visualization (Optional)
-    if len(numeric_columns) >= 2:
-        fig = px.scatter(
-            df,
-            x=numeric_columns[0],
-            y=numeric_columns[1],
-            color='Cluster' if 'Cluster' in df.columns else None,
-            title=f"Interactive Scatter Plot of {numeric_columns[0]} vs {numeric_columns[1]}"
-        )
-        interactive_plot_path = os.path.join(output_dir, f"{numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html")
-        fig.write_html(interactive_plot_path)
-        png_files.append(f"{numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html")
-        logging.info(f"Saved {numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html in {output_dir}")
-        print(f"Saved {numeric_columns[0]}_vs_{numeric_columns[1]}_interactive.html in {output_dir}")
-    
     return png_files
 
 def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
@@ -302,7 +241,6 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
         f"**Missing Values:** {analysis['missing_values']}\n"
         f"**Summary Statistics:** {list(analysis['summary_stats'].keys())}\n"
         f"**Outliers Detected:** {analysis['outliers']}\n"
-        f"**Feature Importance:** {analysis['feature_importance']}\n"
         f"**Clustering Results:** {analysis['clusters']}\n"
     )
     
@@ -327,7 +265,7 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
             {"role": "system", "content": "You are a helpful data scientist narrating the story of a dataset."},
             {"role": "user", "content": prompt}
         ],
-        "max_tokens": 2000,
+        "max_tokens": 1500,
         "temperature": 0.7
     }
     
@@ -356,10 +294,7 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
     if png_files and "error" not in story.lower():
         story += "\n\n## Visualizations\n"
         for img in png_files:
-            if img.endswith('.html'):
-                story += f"[Interactive Visualization]({img})\n"
-            else:
-                story += f"![{img}]({img})\n"
+            story += f"![{img}]({img})\n"
     
     # Refined Additional Suggestions Prompt
     suggestion_prompt = (
@@ -373,7 +308,7 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
             {"role": "system", "content": "You are a helpful data scientist."},
             {"role": "user", "content": suggestion_prompt}
         ],
-        "max_tokens": 800,
+        "max_tokens": 500,
         "temperature": 0.7
     }
     
@@ -405,7 +340,7 @@ def narrate_story(analysis, png_files, api_proxy_token, api_proxy_url):
             {"role": "system", "content": "You are a helpful data scientist."},
             {"role": "user", "content": vision_prompt}
         ],
-        "max_tokens": 800,
+        "max_tokens": 500,
         "temperature": 0.7
     }
     
